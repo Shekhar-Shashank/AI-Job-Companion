@@ -15,6 +15,20 @@ interface RagContext {
   tokenCount: number;
 }
 
+export interface ContextPreferences {
+  sources?: string[];  // Which context sources to include
+  customData?: string; // Custom data to include in context
+  includeAll?: boolean; // Include all available context
+}
+
+export interface AvailableContextSource {
+  id: string;
+  name: string;
+  description: string;
+  available: boolean;
+  itemCount?: number;
+}
+
 enum QueryIntent {
   PROFILE_QUERY = 'profile_query',
   JOB_SEARCH = 'job_search',
@@ -24,6 +38,7 @@ enum QueryIntent {
   UPDATE_PROFILE = 'update_profile',
   UPDATE_PLAN = 'update_plan',
   TRACK_APPLICATION = 'track_application',
+  APPLICATION_QUERY = 'application_query',
   WEB_SEARCH = 'web_search',
   COMPARISON = 'comparison',
   RECOMMENDATION = 'recommendation',
@@ -40,11 +55,86 @@ export class RagService {
     private qdrantService: QdrantService,
   ) {}
 
-  async buildContext(userId: string, query: string): Promise<RagContext> {
-    const intent = await this.classifyIntent(query);
+  async buildContext(
+    userId: string,
+    query: string,
+    preferences?: ContextPreferences,
+  ): Promise<RagContext> {
     const sources: ContextSource[] = [];
 
-    // Get relevant context based on intent
+    // If includeAll is set or specific sources are provided, use those
+    if (preferences?.includeAll || preferences?.sources?.length) {
+      await this.buildContextFromPreferences(userId, query, sources, preferences);
+    } else {
+      // Default behavior: use intent-based context selection
+      const intent = await this.classifyIntent(query);
+      await this.buildContextFromIntent(userId, query, sources, intent);
+    }
+
+    // Add custom data if provided
+    if (preferences?.customData) {
+      sources.push({
+        type: 'custom_data',
+        content: `Custom Context Data:\n${preferences.customData}`,
+      });
+    }
+
+    // Build context text
+    const text = this.formatContext(sources);
+    const tokenCount = this.embeddingsService.estimateTokens(text);
+
+    return { text, sources, tokenCount };
+  }
+
+  private async buildContextFromPreferences(
+    userId: string,
+    query: string,
+    sources: ContextSource[],
+    preferences: ContextPreferences,
+  ): Promise<void> {
+    const sourcesToInclude = preferences.includeAll
+      ? ['profile', 'skills', 'experience', 'education', 'jobs', 'applications', 'documents', 'plans', 'chat_history']
+      : preferences.sources || [];
+
+    const promises: Promise<void>[] = [];
+
+    for (const source of sourcesToInclude) {
+      switch (source) {
+        case 'profile':
+          promises.push(this.addProfileSummary(userId, sources));
+          break;
+        case 'skills':
+        case 'experience':
+        case 'education':
+          promises.push(this.addProfileContext(userId, query, sources));
+          break;
+        case 'jobs':
+          promises.push(this.addJobContext(userId, query, sources));
+          break;
+        case 'applications':
+          promises.push(this.addApplicationsContext(userId, sources));
+          break;
+        case 'documents':
+          promises.push(this.addDocumentContext(userId, query, sources));
+          break;
+        case 'plans':
+          promises.push(this.addPlanContext(userId, sources));
+          break;
+        case 'chat_history':
+          promises.push(this.addChatHistoryContext(userId, sources));
+          break;
+      }
+    }
+
+    await Promise.all(promises);
+  }
+
+  private async buildContextFromIntent(
+    userId: string,
+    query: string,
+    sources: ContextSource[],
+    intent: QueryIntent,
+  ): Promise<void> {
     switch (intent) {
       case QueryIntent.PROFILE_QUERY:
         await this.addProfileContext(userId, query, sources);
@@ -65,26 +155,44 @@ export class RagService {
         await this.addPlanContext(userId, sources);
         break;
 
+      case QueryIntent.APPLICATION_QUERY:
+      case QueryIntent.TRACK_APPLICATION:
+        await this.addApplicationsContext(userId, sources);
+        break;
+
       case QueryIntent.COMPARISON:
       case QueryIntent.RECOMMENDATION:
         await this.addProfileContext(userId, query, sources);
         await this.addJobContext(userId, query, sources);
+        await this.addApplicationsContext(userId, sources);
         break;
 
       default:
         // For general queries, include profile summary
         await this.addProfileSummary(userId, sources);
     }
-
-    // Build context text
-    const text = this.formatContext(sources);
-    const tokenCount = this.embeddingsService.estimateTokens(text);
-
-    return { text, sources, tokenCount };
   }
 
   private async classifyIntent(query: string): Promise<QueryIntent> {
     const lowerQuery = query.toLowerCase();
+
+    // Check for application-related queries
+    if (
+      lowerQuery.includes('application') ||
+      lowerQuery.includes('applied') ||
+      lowerQuery.includes('applying') ||
+      lowerQuery.includes('status') ||
+      lowerQuery.includes('interview')
+    ) {
+      if (
+        lowerQuery.includes('track') ||
+        lowerQuery.includes('update') ||
+        lowerQuery.includes('change')
+      ) {
+        return QueryIntent.TRACK_APPLICATION;
+      }
+      return QueryIntent.APPLICATION_QUERY;
+    }
 
     // Simple keyword-based classification
     if (
