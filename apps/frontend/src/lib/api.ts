@@ -364,8 +364,10 @@ export const jobsApi = {
 // Applications API
 export const applicationsApi = {
   list: () => api.get<Application[]>('/applications'),
+  get: (id: string) => api.get<Application>(`/applications/${id}`),
   create: (data: CreateApplicationDto) => api.post<Application>('/applications', data),
-  update: (id: string, data: Partial<CreateApplicationDto>) => api.patch<Application>(`/applications/${id}`, data),
+  update: (id: string, data: Partial<CreateApplicationDto>) => api.put<Application>(`/applications/${id}`, data),
+  delete: (id: string) => api.delete(`/applications/${id}`),
 };
 
 // Plans API
@@ -531,10 +533,19 @@ export interface CreateJobDto {
 
 export interface Application {
   id: string;
-  job: Job;
+  jobId?: string;
+  job?: Job;
+  externalJobUrl?: string;
+  companyName?: string;
+  jobTitle?: string;
   status: string;
-  appliedAt: string;
+  appliedDate?: string;
+  coverLetter?: string;
   notes?: string;
+  nextAction?: string;
+  nextActionDate?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CreateApplicationDto {
@@ -593,4 +604,100 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+}
+
+// Scraper Types
+export interface ScraperStatus {
+  source: string;
+  enabled: boolean;
+  isBlocked: boolean;
+  blockedAt?: string;
+  consecutiveFailures: number;
+  lastSuccess?: string;
+  lastRun?: string;
+}
+
+export interface ScraperRunResult {
+  source: string;
+  success: boolean;
+  jobsFound: number;
+  jobsNew: number;
+  jobsUpdated: number;
+  error?: string;
+  blocked?: boolean;
+  duration?: number;
+}
+
+export interface ScrapeResult {
+  results: ScraperRunResult[];
+  totalJobsNew: number;
+  totalJobsUpdated: number;
+  sourcesSucceeded: number;
+  sourcesFailed: number;
+}
+
+export interface ScrapeJobsRequest {
+  sources?: string[];
+  keywords?: string[];
+  location?: string;
+  remoteOnly?: boolean;
+  salaryMin?: number;
+  scoreAfterScrape?: boolean;
+}
+
+export interface ScraperHistory {
+  id: string;
+  source: string;
+  status: 'running' | 'success' | 'failed';
+  startedAt: string;
+  completedAt?: string;
+  jobsFound: number;
+  jobsNew: number;
+  jobsUpdated: number;
+  errorMessage?: string;
+}
+
+// Scrapers API
+export const scrapersApi = {
+  // Run all or specific scrapers
+  run: (data?: ScrapeJobsRequest) =>
+    api.post<ScrapeResult>('/scrapers/run', data || {}),
+
+  // Run a specific scraper
+  runSource: (source: string, data?: ScrapeJobsRequest) =>
+    api.post<ScrapeResult>(`/scrapers/run/${source}`, data || {}),
+
+  // Get status of all scrapers
+  status: () => api.get<ScraperStatus[]>('/scrapers/status'),
+
+  // Get available sources
+  sources: () => api.get<{ sources: string[] }>('/scrapers/sources'),
+
+  // Get scraper run history
+  history: (limit?: number) =>
+    api.get<ScraperHistory[]>('/scrapers/history', {
+      params: limit ? { limit: String(limit) } : undefined,
+    }),
+
+  // Test a scraper connection
+  test: (source: string) =>
+    api.post<{ success: boolean; message: string }>(`/scrapers/test/${source}`),
+
+  // Enable a scraper
+  enable: (source: string) =>
+    api.post<{ success: boolean }>(`/scrapers/enable/${source}`),
+
+  // Disable a scraper
+  disable: (source: string) =>
+    api.post<{ success: boolean }>(`/scrapers/disable/${source}`),
+
+  // Unblock a blocked scraper
+  unblock: (source: string) =>
+    api.post<{ success: boolean }>(`/scrapers/unblock/${source}`),
+
+  // Score unscored jobs
+  score: (limit?: number) =>
+    api.post<{ scored: number }>('/scrapers/score', undefined, {
+      params: limit ? { limit: String(limit) } : undefined,
+    }),
 }

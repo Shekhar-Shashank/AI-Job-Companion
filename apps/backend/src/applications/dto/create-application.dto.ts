@@ -51,9 +51,12 @@ export class CreateApplicationDto {
   @IsString()
   jobTitle?: string;
 
-  @ApiPropertyOptional({ example: 'applied' })
+  @ApiPropertyOptional({ example: 'APPLIED' })
   @IsOptional()
-  @IsIn(['saved', 'applied', 'screening', 'interview', 'offer', 'rejected', 'withdrawn'])
+  @IsIn([
+    'SAVED', 'APPLIED', 'SCREENING', 'INTERVIEWING', 'INTERVIEW', 'OFFER', 'ACCEPTED', 'REJECTED', 'WITHDRAWN',
+    'saved', 'applied', 'screening', 'interviewing', 'interview', 'offer', 'accepted', 'rejected', 'withdrawn',
+  ])
   status?: string;
 
   @ApiPropertyOptional({ example: '2024-01-15' })

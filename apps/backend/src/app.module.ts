@@ -18,6 +18,7 @@ import { JobsModule } from './jobs/jobs.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { ChatModule } from './chat/chat.module';
 import { EmbeddingsModule } from './embeddings/embeddings.module';
+import { ScrapersModule } from './scrapers/scrapers.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
 @Module({
@@ -48,6 +49,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     ApplicationsModule,
     ChatModule,
     EmbeddingsModule,
+    ScrapersModule,
   ],
   providers: [
     {

@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { jobsApi, applicationsApi, type Job, type CreateJobDto } from '@/lib/api';
+import { jobsApi, applicationsApi, scrapersApi, type Job, type CreateJobDto } from '@/lib/api';
+import { ScraperDialog } from '@/components/scraper-dialog';
+import { useToast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,11 +44,14 @@ const emptyJobForm: CreateJobDto = {
 
 export default function JobsPage() {
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [search, setSearch] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isScraperDialogOpen, setIsScraperDialogOpen] = useState(false);
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [jobForm, setJobForm] = useState<CreateJobDto>(emptyJobForm);
+  const [sourceFilter, setSourceFilter] = useState<string>('all');
 
   const { data: jobsResponse, isLoading } = useQuery({
     queryKey: ['jobs'],
@@ -60,6 +65,18 @@ export default function JobsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
       closeDialog();
+      addToast({
+        title: 'Job Added',
+        description: 'New job has been added successfully.',
+        variant: 'success',
+      });
+    },
+    onError: (error: Error) => {
+      addToast({
+        title: 'Failed to Add Job',
+        description: error.message || 'Please try again.',
+        variant: 'error',
+      });
     },
   });
 
@@ -72,6 +89,18 @@ export default function JobsPage() {
         setSelectedJob({ ...selectedJob, ...updatedJob } as Job);
       }
       closeDialog();
+      addToast({
+        title: 'Job Updated',
+        description: 'Job details have been updated successfully.',
+        variant: 'success',
+      });
+    },
+    onError: (error: Error) => {
+      addToast({
+        title: 'Failed to Update Job',
+        description: error.message || 'Please try again.',
+        variant: 'error',
+      });
     },
   });
 
@@ -80,6 +109,18 @@ export default function JobsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
       setSelectedJob(null);
+      addToast({
+        title: 'Job Deleted',
+        description: 'Job has been removed from your list.',
+        variant: 'success',
+      });
+    },
+    onError: (error: Error) => {
+      addToast({
+        title: 'Failed to Delete Job',
+        description: error.message || 'Please try again.',
+        variant: 'error',
+      });
     },
   });
 
@@ -87,10 +128,18 @@ export default function JobsPage() {
     mutationFn: (jobId: string) => jobsApi.score([jobId]),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      addToast({
+        title: 'Job Scored',
+        description: 'Job match score has been calculated.',
+        variant: 'success',
+      });
     },
-    onError: (error) => {
-      console.error('Score job error:', error);
-      alert('Failed to score job. Please try again.');
+    onError: (error: Error) => {
+      addToast({
+        title: 'Scoring Failed',
+        description: error.message || 'Failed to score job. Please try again.',
+        variant: 'error',
+      });
     },
   });
 
@@ -98,10 +147,18 @@ export default function JobsPage() {
     mutationFn: () => jobsApi.score(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      addToast({
+        title: 'All Jobs Scored',
+        description: 'Match scores have been calculated for all jobs.',
+        variant: 'success',
+      });
     },
-    onError: (error) => {
-      console.error('Score all jobs error:', error);
-      alert('Failed to score jobs. Please try again.');
+    onError: (error: Error) => {
+      addToast({
+        title: 'Scoring Failed',
+        description: error.message || 'Failed to score jobs. Please try again.',
+        variant: 'error',
+      });
     },
   });
 
@@ -109,6 +166,18 @@ export default function JobsPage() {
     mutationFn: (jobId: string) => applicationsApi.create({ jobId, status: 'APPLIED' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['applications'] });
+      addToast({
+        title: 'Application Submitted',
+        description: `Successfully applied to ${selectedJob?.title || 'this job'}!`,
+        variant: 'success',
+      });
+    },
+    onError: (error: Error) => {
+      addToast({
+        title: 'Application Failed',
+        description: error.message || 'Failed to submit application. Please try again.',
+        variant: 'error',
+      });
     },
   });
 
@@ -122,11 +191,16 @@ export default function JobsPage() {
     }
   }, [jobs, selectedJob]);
 
-  const filteredJobs = jobs.filter(
-    (job) =>
+  const filteredJobs = jobs.filter((job) => {
+    const matchesSearch =
       job.title.toLowerCase().includes(search.toLowerCase()) ||
-      job.company.toLowerCase().includes(search.toLowerCase())
-  );
+      job.company.toLowerCase().includes(search.toLowerCase());
+    const matchesSource = sourceFilter === 'all' || job.source === sourceFilter;
+    return matchesSearch && matchesSource;
+  });
+
+  // Get unique sources for filter dropdown
+  const uniqueSources = Array.from(new Set(jobs.map((job) => job.source))).sort();
 
   const sortedJobs = [...filteredJobs].sort((a, b) => {
     const scoreA = a.score?.overallScore || 0;
@@ -197,13 +271,38 @@ export default function JobsPage() {
             />
           </div>
           <div className="flex gap-2">
-            <Button variant="default" size="sm" className="flex-1" onClick={openAddDialog}>
-              + Add Job
+            <Button
+              variant="default"
+              size="sm"
+              className="flex-1"
+              onClick={() => setIsScraperDialogOpen(true)}
+            >
+              Fetch Jobs
             </Button>
+            <Button variant="outline" size="sm" className="flex-1" onClick={openAddDialog}>
+              + Add
+            </Button>
+          </div>
+          <div className="flex gap-2">
+            <Select
+              value={sourceFilter}
+              onValueChange={(value) => setSourceFilter(value)}
+            >
+              <SelectTrigger className="flex-1">
+                <SelectValue placeholder="Filter by source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sources</SelectItem>
+                {uniqueSources.map((source) => (
+                  <SelectItem key={source} value={source}>
+                    {source.charAt(0).toUpperCase() + source.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               variant="outline"
               size="sm"
-              className="flex-1"
               onClick={() => scoreAllMutation.mutate()}
               disabled={scoreAllMutation.isPending || jobs.length === 0}
             >
@@ -571,6 +670,12 @@ export default function JobsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Scraper Dialog */}
+      <ScraperDialog
+        open={isScraperDialogOpen}
+        onOpenChange={setIsScraperDialogOpen}
+      />
     </div>
   );
 }

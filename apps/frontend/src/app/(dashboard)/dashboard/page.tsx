@@ -155,8 +155,12 @@ export default function DashboardPage() {
                 {recentApplications.map((app) => (
                   <div key={app.id} className="flex items-center justify-between">
                     <div className="space-y-1">
-                      <p className="font-medium leading-none">{app.job.title}</p>
-                      <p className="text-sm text-muted-foreground">{app.job.company}</p>
+                      <p className="font-medium leading-none">
+                        {app.job?.title || app.jobTitle || 'Unknown Position'}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {app.job?.company || app.companyName || 'Unknown Company'}
+                      </p>
                     </div>
                     <Badge
                       variant={
